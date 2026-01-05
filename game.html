@@ -1,0 +1,1359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mecha Combat Prototype</title>
+    <!-- Load Tailwind CSS for UI/HUD -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Three.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        /* Custom CSS for the Game Canvas */
+        body { margin: 0; font-family: 'Inter', sans-serif; background-color: #0d1117; }
+        canvas { display: block; }
+        #game-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+        }
+        .config-button {
+            padding: 0.25rem 0.75rem;
+            border-radius: 0.5rem;
+            font-size: 0.75rem;
+            transition: all 0.15s;
+            border: 1px solid transparent;
+        }
+        .config-button:hover {
+            opacity: 0.9;
+        }
+        .config-button.selected {
+            background-color: #1e40af;
+            color: #ffffff;
+            border-color: #93c5fd;
+            box-shadow: 0 0 10px rgba(30, 64, 175, 0.7);
+        }
+        /* Minimap specific styling */
+        #minimap-canvas {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            border: 3px solid #1e40af;
+            border-radius: 0.75rem;
+            background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent background */
+            pointer-events: none; /* Crucial: allows mouse interaction with HUD elements underneath */
+            z-index: 10;
+        }
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 24px;
+            height: 24px;
+            border: 2px solid rgba(255, 255, 255, 0.6);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 50;
+        }
+        #crosshair::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 4px;
+            height: 4px;
+            background-color: rgba(255, 255, 255, 0.9);
+            transform: translate(-50%, -50%);
+            border-radius: 50%;
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'mech-blue': '#1e40af',
+                        'mech-red': '#dc2626',
+                        'mech-green': '#10b981',
+                        'bg-dark': '#0f172a',
+                        'sunny-sky': '#6e9ecf',
+                        'ocean-blue': '#1565c0',
+                        'config-bg': '#1e293b',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <!-- Configuration Screen (Initial State) -->
+    <div id="config-screen" class="relative min-h-screen bg-config-bg p-8 flex flex-col items-center justify-start z-20 overflow-y-auto">
+        <h1 class="text-4xl font-extrabold text-mech-green mb-8 shadow-md p-2 rounded-lg mt-4">MECHA BAY CONFIGURATION</h1>
+        
+        <div class="flex flex-col lg:flex-row gap-10 w-full max-w-6xl mb-8">
+            <!-- Player Mecha Configuration -->
+            <div class="bg-bg-dark/90 p-6 rounded-xl shadow-2xl border-4 border-mech-blue/50 flex-1">
+                <h2 class="text-2xl font-bold text-mech-blue mb-4 border-b border-mech-blue pb-2">PILOT MECHA (Blue)</h2>
+                <div id="player-config-display" class="text-white text-sm mb-4">
+                    <p>Health: <span id="player-health-display" class="font-bold">0</span></p>
+                    <p>Speed: <span id="player-speed-display" class="font-bold">0</span></p>
+                    <p>Weapon: <span id="player-weapon-display" class="font-bold"></span></p>
+                </div>
+                <div id="player-selectors" class="space-y-4">
+                    <!-- Head Selector -->
+                    <div>
+                        <span class="text-white font-semibold block mb-1">Head:</span>
+                        <button data-part="head" data-value="sensor" class="config-button bg-gray-600">Sensor (+30 HP)</button>
+                        <button data-part="head" data-value="armor" class="config-button bg-gray-600">Armor (+60 HP)</button>
+                    </div>
+                    <!-- Body Selector -->
+                    <div>
+                        <span class="text-white font-semibold block mb-1">Body:</span>
+                        <button data-part="body" data-value="light" class="config-button bg-gray-600">Light (100 HP, 1.0x Speed)</button>
+                        <button data-part="body" data-value="heavy" class="config-button bg-gray-600">Heavy (140 HP, 0.7x Speed)</button>
+                    </div>
+                    <!-- Legs Selector -->
+                    <div>
+                        <span class="text-white font-semibold block mb-1">Legs:</span>
+                        <button data-part="legs" data-value="bipedal" class="config-button bg-gray-600">Bipedal (Standard)</button>
+                        <button data-part="legs" data-value="tracked" class="config-button bg-gray-600">Tracked (-0.2x Speed)</button>
+                    </div>
+                    <!-- Gun Selector -->
+                    <div>
+                        <span class="text-white font-semibold block mb-1">Gun:</span>
+                        <button data-part="gun" data-value="rapid" class="config-button bg-gray-600">Rapid (10 DMG, 10 RPS)</button>
+                        <button data-part="gun" data-value="cannon" class="config-button bg-gray-600">Cannon (30 DMG, 3 RPS)</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Enemy Mecha Configuration -->
+            <div class="bg-bg-dark/90 p-6 rounded-xl shadow-2xl border-4 border-mech-red/50 flex-1">
+                <h2 class="text-2xl font-bold text-mech-red mb-4 border-b border-mech-red pb-2">HOSTILE MECHA (Red)</h2>
+                <div id="enemy-config-display" class="text-white text-sm mb-4">
+                    <p>Health: <span id="enemy-health-display" class="font-bold">0</span></p>
+                    <p>Speed: <span id="enemy-speed-display" class="font-bold">0</span></p>
+                    <p>Weapon: <span id="enemy-weapon-display" class="font-bold"></span></p>
+                </div>
+                 <div id="enemy-selectors" class="space-y-4">
+                    <!-- Head Selector -->
+                    <div>
+                        <span class="text-white font-semibold block mb-1">Head:</span>
+                        <button data-part="head" data-value="sensor" class="config-button bg-gray-600">Sensor (+30 HP)</button>
+                        <button data-part="head" data-value="armor" class="config-button bg-gray-600">Armor (+60 HP)</button>
+                    </div>
+                    <!-- Body Selector -->
+                    <div>
+                        <span class="text-white font-semibold block mb-1">Body:</span>
+                        <button data-part="body" data-value="light" class="config-button bg-gray-600">Light (100 HP, 1.0x Speed)</button>
+                        <button data-part="body" data-value="heavy" class="config-button bg-gray-600">Heavy (140 HP, 0.7x Speed)</button>
+                    </div>
+                    <!-- Legs Selector -->
+                    <div>
+                        <span class="text-white font-semibold block mb-1">Legs:</span>
+                        <button data-part="legs" data-value="bipedal" class="config-button bg-gray-600">Bipedal (Standard)</button>
+                        <button data-part="legs" data-value="tracked" class="config-button bg-gray-600">Tracked (-0.2x Speed)</button>
+                    </div>
+                    <!-- Gun Selector -->
+                    <div>
+                        <span class="text-white font-semibold block mb-1">Gun:</span>
+                        <button data-part="gun" data-value="rapid" class="config-button bg-gray-600">Rapid (10 DMG, 10 RPS)</button>
+                        <button data-part="gun" data-value="cannon" class="config-button bg-gray-600">Cannon (30 DMG, 3 RPS)</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <button id="start-game-button" class="mt-4 px-12 py-3 bg-mech-green text-white text-xl font-bold rounded-xl shadow-lg hover:bg-mech-green/80 transition-transform transform hover:scale-105 disabled:opacity-50" disabled>
+            START DEPLOYMENT
+        </button>
+        <p id="config-message" class="text-red-400 mt-2">Please configure all parts for both Mechas.</p>
+    </div>
+
+    <!-- Game Status and HUD Overlay (Hidden initially) -->
+    <div id="hud-overlay" class="fixed top-0 left-0 w-full p-4 pointer-events-none z-10 hidden">
+        
+        <!-- Minimap Canvas (Top Right) -->
+        <canvas id="minimap-canvas" width="200" height="200"></canvas>
+        <!-- Status Panel (Top Left) -->
+        <div class="bg-bg-dark/80 text-white p-4 rounded-lg shadow-lg max-w-xs pointer-events-auto">
+            <p id="auth-status" class="text-sm mb-2">Pilot Authentication: ...</p>
+            <p id="player-status" class="font-bold text-lg mb-2">MECHA: ACTIVE (HOLD SPACE TO FIRE)</p>
+            <p>Weapon: <span id="weapon-name" class="font-semibold">---</span></p>
+            <p>Health: <span id="hull-integrity" class="font-semibold">---</span></p>
+            <p>Enemies Left: <span id="enemies-left" class="font-semibold">---</span></p>
+            <p>Level: <span id="player-level" class="font-semibold">---</span> | Kills: <span id="player-kills" class="font-semibold">---</span></p>
+
+    </div>
+    <div id="crosshair"></div>
+    </div>
+
+    <!-- 3D Game Container (Hidden initially) -->
+    <div id="game-container" class="hidden"></div>
+
+    <script type="module">
+        // --- MANDATORY FIREBASE SETUP ---
+
+        // Global Firebase vars provided by the environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let db, auth, userId;
+        let isAuthReady = false;
+
+        async function setupFirebase() {
+            const authStatusElement = document.getElementById('auth-status');
+            
+            // Check if Firebase config is available
+            if (Object.keys(firebaseConfig).length === 0 || initialAuthToken === null) {
+                console.warn("Firebase configuration or auth token is missing. Running without persistent features.");
+                isAuthReady = true;
+                authStatusElement.innerText = "Pilot Authentication: ANONYMOUS (Local)";
+                return;
+            }
+
+            try {
+                // Import necessary Firebase modules
+                const { initializeApp } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js");
+                const { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js");
+                const { getFirestore } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+                
+                // Initialize Firebase services
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // Sign in with custom token or anonymously
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                // Listen for auth state changes
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        authStatusElement.innerText = `Pilot Authentication: ${userId.substring(0, 8)}... (App: ${appId.substring(0, 8)})`;
+                    } else {
+                        authStatusElement.innerText = `Pilot Authentication: Anonymous User`;
+                    }
+                    isAuthReady = true;
+                    console.log("Firebase Auth Ready. User ID:", userId);
+                });
+
+            } catch (error) {
+                console.error("Firebase setup failed:", error);
+                authStatusElement.innerText = `Pilot Authentication: ERROR`;
+                isAuthReady = true;
+            }
+        }
+        
+        // --- GAME CONFIGURATION ---
+
+        const PART_CONFIGS = {
+            // Stats based on combining parts
+            HEAD: {
+                sensor: { hpBonus: 30, name: "Sensor Head" },
+                armor: { hpBonus: 60, name: "Armor Head" }
+            },
+            BODY: {
+                light: { hp: 100, speedMod: 1.0, name: "Light Frame" },
+                heavy: { hp: 140, speedMod: 0.7, name: "Heavy Frame" }
+            },
+            LEGS: {
+                bipedal: { speedBonus: 0.0, name: "Bipedal" },
+                tracked: { speedBonus: -0.2, name: "Tracked" }
+            },
+            GUN: {
+                rapid: { fireRate: 100, damage: 10, name: "RAPID (10 RPS)" },
+                cannon: { fireRate: 333, damage: 30, name: "CANNON (3 RPS)" }
+            }
+        };
+
+        const DEFAULT_SELECTION = {
+            head: 'sensor',
+            body: 'light',
+            legs: 'bipedal',
+            gun: 'rapid',
+        };
+
+        // Current configurations being built by the user
+        let playerSelection = JSON.parse(JSON.stringify(DEFAULT_SELECTION));
+        let enemySelection = JSON.parse(JSON.stringify(DEFAULT_SELECTION));
+
+        // Final calculated configs used by the game
+        let playerStats = {};
+        let enemyStats = {};
+        
+        // --- GAME STATE VARIABLES ---
+        let scene, camera, renderer;
+        let player;
+        let keys = {};
+        
+        let speed = 0; // Calculated in startGame
+        let playerHealth = 0; // Calculated in startGame
+        let gameOver = false;
+        
+        // Combat/Autofire Variables
+        let isFiring = false; 
+        let lastFireTime = 0;
+
+        // Leveling Variables
+        let playerKills = 0;
+        let playerXP = 0;
+        let playerLevel = 1;
+        const XP_PER_LEVEL = 100;
+        const XP_PER_KILL = 25;
+        
+        // Enemy Management Variables (Continuous Spawning)
+        let enemies = []; 
+        let enemySpeed = 0; // Calculated in startGame
+        const minEnemies = 3; // Minimum number of enemies to maintain
+        const spawnRadius = 150; 
+        let enemyProjectiles = [];
+        let lastSpawnTime = 0;
+        const spawnInterval = 3000; // Spawn every 3 seconds if count is low
+
+        const ENEMY_TYPES = [
+            { hp: 100, scale: 1.0, interval: 10000, lastSpawn: 0 },
+            { hp: 200, scale: 1.2, interval: 20000, lastSpawn: 0 },
+            { hp: 300, scale: 1.5, interval: 30000, lastSpawn: 0 },
+            { hp: 1000, scale: 2.0, interval: 50000, lastSpawn: 0 },
+            { hp: 1200, scale: 2.5, interval: 60000, lastSpawn: 0 }
+        ];
+        
+        // Terrain Constants
+        const terrainSize = 500;
+        const terrainSegments = 128;
+        const maxHeight = 15;
+        
+        // Camera setup parameters (Dynamic Pitch)
+        const baseCameraDistance = Math.sqrt(30 * 30 + 30 * 30); // ~42.42, maintaining distance
+        const minPitchDeg = 20; // Look forward
+        const maxPitchDeg = 75; // Look down
+        
+        // Animation clock
+        const clock = new THREE.Clock();
+        let legAnimationTime = 0; 
+        const maxLegRotation = Math.PI / 8; // Max leg swing angle (22.5 degrees)
+
+        // Utility: Raycaster for shooting and collision detection
+        const raycaster = new THREE.Raycaster();
+
+        // --- MINIMAP VARIABLES ---
+        let minimapCanvas, minimapContext;
+        const minimapSize = 200; // 200px x 200px
+        const minimapScale = minimapSize / terrainSize; // 200 / 500 = 0.4
+        const minimapCenter = minimapSize / 2; // 100
+
+        // Utility: Get Terrain Height at X, Z (Simplified using a noise function)
+        function getTerrainHeight(x, z) {
+             // Replicate the noise function used in terrain generation
+            let y = Math.sin(x / 30) * 2 + Math.cos(z / 30) * 2;
+            y += (Math.sin(x / 10) * Math.cos(z / 10) * 0.5) * (Math.random() * 0.5 + 0.5);
+            return Math.max(0, y);
+        }
+
+        function calculateStats(selection) {
+            const body = PART_CONFIGS.BODY[selection.body];
+            const head = PART_CONFIGS.HEAD[selection.head];
+            const legs = PART_CONFIGS.LEGS[selection.legs];
+            const gun = PART_CONFIGS.GUN[selection.gun];
+
+            const totalHP = body.hp + head.hpBonus;
+            const finalSpeedMod = body.speedMod + legs.speedBonus;
+            const finalSpeed = finalSpeedMod * 0.5; // Base movement speed multiplier
+
+            return {
+                health: totalHP,
+                speed: finalSpeed,
+                weapon: gun,
+                name: gun.name,
+                parts: selection
+            };
+        }
+        
+        function updateConfigDisplay(isPlayer) {
+            const config = isPlayer ? playerStats : enemyStats;
+            
+            if (config.health) {
+                const healthEl = document.getElementById(isPlayer ? 'player-health-display' : 'enemy-health-display');
+                const speedEl = document.getElementById(isPlayer ? 'player-speed-display' : 'enemy-speed-display');
+                const weaponEl = document.getElementById(isPlayer ? 'player-weapon-display' : 'enemy-weapon-display');
+
+                healthEl.innerText = config.health;
+                speedEl.innerText = (config.speed * 2).toFixed(2); 
+                weaponEl.innerText = config.weapon.name;
+            }
+        }
+
+        function handleConfigSelection(event) {
+            const button = event.target.closest('.config-button');
+            if (!button) return;
+
+            const partType = button.dataset.part;
+            const partValue = button.dataset.value;
+            const isPlayer = button.closest('#player-selectors') !== null;
+            const selectorsId = isPlayer ? '#player-selectors' : '#enemy-selectors';
+            let selection = isPlayer ? playerSelection : enemySelection;
+
+            // Update selection state
+            selection[partType] = partValue;
+            
+            // Recalculate stats and update display
+            if (isPlayer) {
+                playerStats = calculateStats(playerSelection);
+            } else {
+                enemyStats = calculateStats(enemySelection);
+            }
+            updateConfigDisplay(isPlayer);
+
+            // Update button visual state (Deselect siblings, select current)
+            const partButtons = document.querySelectorAll(`${selectorsId} [data-part="${partType}"]`);
+            partButtons.forEach(btn => {
+                btn.classList.remove('selected');
+                btn.classList.add('bg-gray-600');
+            });
+            button.classList.add('selected');
+            button.classList.remove('bg-gray-600');
+            
+            checkConfigCompletion();
+        }
+
+        function checkConfigCompletion() {
+            const playerComplete = Object.keys(playerSelection).every(key => playerSelection[key] !== undefined);
+            const enemyComplete = Object.keys(enemySelection).every(key => enemySelection[key] !== undefined);
+            
+            const startButton = document.getElementById('start-game-button');
+            const messageEl = document.getElementById('config-message');
+
+            if (playerComplete && enemyComplete) {
+                startButton.disabled = false;
+                messageEl.classList.add('hidden');
+            } else {
+                startButton.disabled = true;
+                messageEl.classList.remove('hidden');
+            }
+        }
+
+        function showConfigScreen() {
+            document.getElementById('config-screen').classList.remove('hidden');
+            document.getElementById('hud-overlay').classList.add('hidden');
+            document.getElementById('game-container').classList.add('hidden');
+            
+            // Set up initial selection state and display
+            playerStats = calculateStats(playerSelection);
+            enemyStats = calculateStats(enemySelection);
+            updateConfigDisplay(true);
+            updateConfigDisplay(false);
+
+            // Initial button coloring (to mark defaults as selected)
+            document.querySelectorAll('#player-selectors button, #enemy-selectors button').forEach(button => {
+                const partType = button.dataset.part;
+                const partValue = button.dataset.value;
+                
+                // Determine if this is a default selection
+                const isPlayer = button.closest('#player-selectors') !== null;
+                const selection = isPlayer ? playerSelection : enemySelection;
+
+                if (selection[partType] === partValue) {
+                    button.classList.add('selected');
+                    button.classList.remove('bg-gray-600');
+                }
+            });
+
+            checkConfigCompletion(); // Check if defaults fulfill requirements
+        }
+
+        function startGame() {
+            if (gameOver || document.getElementById('start-game-button').disabled) return;
+            
+            // Hide config screen, show game
+            document.getElementById('config-screen').classList.add('hidden');
+            document.getElementById('hud-overlay').classList.remove('hidden');
+            document.getElementById('game-container').classList.remove('hidden');
+
+            // Apply calculated stats to game state
+            speed = playerStats.speed;
+            playerHealth = playerStats.health;
+            enemySpeed = enemyStats.speed * 0.3; // Enemies move slower
+
+            // Initialize spawn timers
+            ENEMY_TYPES.forEach(t => t.lastSpawn = performance.now());
+
+            // Update HUD 
+            document.getElementById('weapon-name').innerText = playerStats.weapon.name;
+            document.getElementById('hull-integrity').innerText = playerHealth;
+            document.getElementById('enemies-left').innerText = enemies.length;
+            document.getElementById('player-level').innerText = playerLevel;
+            document.getElementById('player-kills').innerText = playerKills;
+
+
+            // Initialize and start Three.js
+            initThreeJs();
+            animate();
+            
+            // Request pointer lock for controls
+            renderer.domElement.requestPointerLock();
+        }
+
+
+        // --- THREE.JS CORE FUNCTIONS ---
+
+        function initThreeJs() {
+            // 1. Scene Setup - Updated for a bright, grassy environment
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87CEEB); // Sky Blue
+            scene.fog = new THREE.Fog(0x8fbc8f, 10, 250); // Darker sea green fog
+
+            // 2. Camera Setup
+            const aspectRatio = window.innerWidth / window.innerHeight;
+            camera = new THREE.PerspectiveCamera(75, aspectRatio, 0.1, 1000);
+            
+            // 3. Renderer Setup
+            const container = document.getElementById('game-container');
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.shadowMap.enabled = true;
+            container.appendChild(renderer.domElement);
+
+            // 4. Lighting
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.8); 
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffee, 3); 
+            directionalLight.position.set(20, 50, 20);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
+            directionalLight.shadow.camera.near = 0.5;
+            directionalLight.shadow.camera.far = 500;
+            scene.add(directionalLight);
+
+            // 5. Game Objects
+            createTerrain();
+            createObstacles();
+            createTrees();
+            createTreestype();
+            player = createMecha(true, playerStats.parts);
+            scene.add(player);
+
+            // 6. Minimap Setup (2D Canvas)
+            minimapCanvas = document.getElementById('minimap-canvas');
+            minimapContext = minimapCanvas.getContext('2d');
+
+            // 7. Event Listeners
+            window.addEventListener('resize', onWindowResize);
+            document.addEventListener('keydown', onKeyDown);
+            document.addEventListener('keyup', onKeyUp);
+            document.addEventListener('mousemove', onMouseMove);
+
+            // Set initial camera position
+            const initialHeight = getTerrainHeight(0, 0); 
+            player.position.set(0, 4 + initialHeight, 0); 
+            updateCamera();
+        }
+
+        function createTerrain() {
+            // A. Terrain (Hills and Grass - Vertex colored for variation)
+            const groundGeometry = new THREE.PlaneGeometry(terrainSize, terrainSize, terrainSegments, terrainSegments);
+            groundGeometry.rotateX(-Math.PI / 2); 
+            
+            // Set up vertex colors
+            groundGeometry.setAttribute('color', new THREE.Float32BufferAttribute(groundGeometry.attributes.position.count * 3, 3));
+            const colors = groundGeometry.attributes.color.array;
+
+            for (let i = 0; i < groundGeometry.attributes.position.array.length; i += 3) {
+                const x = groundGeometry.attributes.position.array[i];
+                const z = groundGeometry.attributes.position.array[i + 2];
+                
+                let y = Math.sin(x / 30) * 2 + Math.cos(z / 30) * 2;
+                y += (Math.sin(x / 10) * Math.cos(z / 10) * 0.5) * (Math.random() * 0.5 + 0.5);
+                y = Math.max(0, y); 
+
+                groundGeometry.attributes.position.array[i + 1] = y;
+
+                const heightRatio = y / maxHeight;
+                
+                // Deeper, more varied grass colors
+                let r = 0.15 + Math.random() * 0.05; 
+                let g = 0.45 + Math.random() * 0.15;
+                let b = 0.1 + Math.random() * 0.05;
+
+                // Make higher areas slightly lighter/browner (simulating dry patches)
+                if (heightRatio > 0.5) {
+                    r += heightRatio * 0.1;
+                    g -= heightRatio * 0.1;
+                }
+                
+                colors[i] = r;
+                colors[i + 1] = g;
+                colors[i + 2] = b;
+            }
+            groundGeometry.computeVertexNormals();
+
+            const groundMaterial = new THREE.MeshPhongMaterial({ vertexColors: true, side: THREE.DoubleSide });
+            const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.receiveShadow = true;
+            scene.add(ground);
+            
+            // B. Ocean/Sea
+            const oceanGeometry = new THREE.PlaneGeometry(terrainSize * 2, terrainSize * 2);
+            const oceanMaterial = new THREE.MeshPhongMaterial({ color: 0x1565c0, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
+            const ocean = new THREE.Mesh(oceanGeometry, oceanMaterial);
+            ocean.rotation.x = Math.PI / 2;
+            ocean.position.y = -5; 
+            scene.add(ocean);
+        }
+
+        function createObstacles() {
+            const obstacleMaterial = new THREE.MeshPhongMaterial({ color: 0x4f4f4f });
+            const positions = [
+                new THREE.Vector3(50, 0, -50),
+                new THREE.Vector3(-30, 0, -80),
+                new THREE.Vector3(10, 0, -120),
+            ];
+
+            positions.forEach((pos) => {
+                const height = getTerrainHeight(pos.x, pos.z);
+                const obs = new THREE.Mesh(new THREE.BoxGeometry(20, 10, 20), obstacleMaterial);
+                obs.position.copy(pos);
+                obs.position.y = 5 + height; 
+                obs.castShadow = true;
+                scene.add(obs);
+            });
+        }
+
+        function createTrees() {
+            const treeCount = 100;
+            
+            for (let i = 0; i < treeCount; i++) {
+                // Random position within terrain bounds (avoiding very edges)
+                const x = (Math.random() - 0.05) * (terrainSize - 20);
+                const z = (Math.random() - 0.05) * (terrainSize - 20);
+                
+                // Avoid spawning too close to center (start area)
+                if (Math.abs(x) < 30 && Math.abs(z) < 30) continue;
+
+                const y = getTerrainHeight(x, z);
+                
+                // Only place trees on land (above water level roughly)
+                if (y < 1.5) continue;
+
+                const tree = new THREE.Group();
+                tree.position.set(x, y, z);
+
+                // Trunk
+                const trunkGeo = new THREE.CylinderGeometry(5, 7, 20, 5);
+                const trunkMat = new THREE.MeshPhongMaterial({ color: 0x5c4033, flatShading: true });
+                const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+                trunk.position.y = 1.5;
+                trunk.castShadow = true;
+                tree.add(trunk);
+
+                // Foliage (Cone)
+                const leavesGeo = new THREE.ConeGeometry(10.5, 30, 25);
+                const leavesMat = new THREE.MeshPhongMaterial({ color: 0x228b22, flatShading: true });
+                const leaves = new THREE.Mesh(leavesGeo, leavesMat);
+                leaves.position.y = 25.5; // 3 (trunk height) + half leaves height - overlap
+                leaves.castShadow = true;
+                tree.add(leaves);
+
+                scene.add(tree);
+            }
+        }
+ function createTreestype() {
+            const treeCount = 100;
+            
+            for (let i = 0; i < treeCount; i++) {
+                // Random position within terrain bounds (avoiding very edges)
+                const x = (Math.random() - 0.5) * (terrainSize - 200);
+                const z = (Math.random() - 0.5) * (terrainSize - 200);
+                
+                // Avoid spawning too close to center (start area)
+                if (Math.abs(x) < 30 && Math.abs(z) < 30) continue;
+
+                const y = getTerrainHeight(x, z);
+                
+                // Only place trees on land (above water level roughly)
+                if (y < 1.5) continue;
+
+                const tree = new THREE.Group();
+                tree.position.set(x, y, z);
+
+                // Trunk
+                const trunkGeo = new THREE.CylinderGeometry(2, 4, 10, 5);
+                const trunkMat = new THREE.MeshPhongMaterial({ color: 0x5c4033, flatShading: true });
+                const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+                trunk.position.y = 1.5;
+                trunk.castShadow = true;
+                tree.add(trunk);
+
+                // Foliage (Cone)
+                const leavesGeo = new THREE.ConeGeometry(6.5, 15, 12);
+                const leavesMat = new THREE.MeshPhongMaterial({ color: 0x228b22, flatShading: true });
+                const leaves = new THREE.Mesh(leavesGeo, leavesMat);
+                leaves.position.y = 10.5; // 3 (trunk height) + half leaves height - overlap
+                leaves.castShadow = true;
+                tree.add(leaves);
+
+                scene.add(tree);
+            }
+        }
+
+        function createHPLabel(hp) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            ctx.fillRect(0, 0, 256, 64);
+            ctx.font = 'bold 40px Arial';
+            ctx.fillStyle = 'white';
+            ctx.textAlign = 'center';
+            ctx.fillText(`HP: ${hp}`, 128, 45);
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+            const sprite = new THREE.Sprite(spriteMaterial);
+            sprite.scale.set(10, 2.5, 1);
+            sprite.name = 'HPLabel';
+            return sprite;
+        }
+
+        function createMecha(isPlayer, parts, scale = 1, hp = 0) {
+            const mecha = new THREE.Group();
+            
+            // Apply scale
+            mecha.scale.set(scale, scale, scale);
+            mecha.userData.isEnemy = !isPlayer;
+
+            const color = isPlayer ? 0x5a2d82 : 0xcc0000;
+            const bodySize = parts.body.includes('heavy') ? [5, 6, 5] : [4, 6, 4];
+            
+            // Body (Main Cube)
+            const bodyGeometry = new THREE.BoxGeometry(bodySize[0], bodySize[1], bodySize[2]);
+            const bodyMaterial = new THREE.MeshPhongMaterial({ color: color, flatShading: true });
+            const bodyMesh = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            bodyMesh.position.y = bodySize[1] / 2;
+            bodyMesh.name = 'Body';
+            mecha.add(bodyMesh);
+
+            // Head (Small cube on top)
+            const headGeometry = new THREE.BoxGeometry(2, 2, 2);
+            const headMaterial = new THREE.MeshPhongMaterial({ color: color + (parts.head.includes('armor') ? 0x222222 : 0xffffff) });
+            const headMesh = new THREE.Mesh(headGeometry, headMaterial);
+            headMesh.position.y = bodySize[1] + 1;
+            headMesh.name = 'Head';
+            mecha.add(headMesh);
+
+            // Legs setup (Groups for articulation)
+            const legGeometry = new THREE.BoxGeometry(1.5, 4, 1.5); 
+            const legMaterial = new THREE.MeshPhongMaterial({ color: 0x333333 });
+            
+            // Left Leg Group (pivot point at body connection)
+            const leftLegGroup = new THREE.Group();
+            leftLegGroup.position.set(-bodySize[0] / 2, 0, 0); // Horizontal position relative to body
+            
+            const leftLegMesh = new THREE.Mesh(legGeometry, legMaterial);
+            leftLegMesh.position.y = -2; // Position mesh relative to its group origin (pivot)
+            leftLegGroup.add(leftLegMesh);
+            mecha.add(leftLegGroup);
+
+            // Right Leg Group
+            const rightLegGroup = new THREE.Group();
+            rightLegGroup.position.set(bodySize[0] / 2, 0, 0); // Horizontal position relative to body
+            
+            const rightLegMesh = new THREE.Mesh(legGeometry, legMaterial);
+            rightLegMesh.position.y = -2; // Position mesh relative to its group origin (pivot)
+            rightLegGroup.add(rightLegMesh);
+            mecha.add(rightLegGroup);
+
+            // Store references for animation
+            mecha.leftLeg = leftLegGroup;
+            mecha.rightLeg = rightLegGroup;
+
+            // Add Gun Model
+            const gunGeometry = new THREE.BoxGeometry(1, 1, 6);
+            const gunMaterial = new THREE.MeshPhongMaterial({ color: 0x555555, flatShading: true });
+            const gunMesh = new THREE.Mesh(gunGeometry, gunMaterial);
+            
+            // Position it on the front of the body, slightly up
+            const bodyDepth = bodySize[2];
+            gunMesh.position.set(0, bodySize[1] / 2 + 1, bodyDepth / 2 + 3); 
+            gunMesh.name = 'Gun';
+            mecha.add(gunMesh);
+            
+            // Add HP Label for enemies
+            if (!isPlayer && hp > 0) {
+                const label = createHPLabel(hp);
+                label.position.y = bodySize[1] + 5; 
+                mecha.add(label);
+            }
+
+            mecha.castShadow = true;
+            return mecha;
+        }
+
+        /**
+         * Spawns a specific type of enemy.
+         */
+        function spawnEnemy(type) {
+            const angle = Math.random() * Math.PI * 2;
+            const distance = spawnRadius * (Math.random() * 0.5 + 0.5); 
+            
+            const x = Math.cos(angle) * distance;
+            const z = Math.sin(angle) * distance;
+            const y = getTerrainHeight(x, z);
+
+            // Create enemy mecha using the selected enemy configuration but with specific type stats
+            const enemy = createMecha(false, enemyStats.parts, type.scale, type.hp);
+            enemy.position.set(x, 4 + y, z); 
+            enemy.health = type.hp;
+            enemy.maxHealth = type.hp; // Store max health for lifesteal mechanics
+            enemy.lastFireTime = 0; // Initialize individual enemy fire cooldown
+            scene.add(enemy);
+            enemies.push(enemy);
+
+            document.getElementById('enemies-left').innerText = enemies.length;
+        }
+
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function onKeyDown(event) {
+            keys[event.key.toLowerCase()] = true;
+            if (event.code === 'Space') {
+                event.preventDefault(); 
+                isFiring = true;
+            }
+        }
+
+        function onKeyUp(event) {
+            keys[event.key.toLowerCase()] = false;
+            if (event.code === 'Space') {
+                isFiring = false;
+            }
+        }
+
+        let rotationSpeed = 0.005;
+        let mouseX = 0;
+        let mouseY = 0; // Tracks vertical mouse movement for camera pitch control
+        const maxMouseY = 150; // Max displacement for pitch control
+
+        function onMouseMove(event) {
+            if (document.pointerLockElement === renderer.domElement) {
+                mouseX += event.movementX * rotationSpeed;
+                
+                // Control mouseY for camera pitch (Up/Down mouse movement)
+                mouseY = Math.max(-maxMouseY, Math.min(maxMouseY, mouseY + event.movementY * 0.5)); 
+            }
+        }
+        
+        function updateMovement() {
+            if (gameOver) return;
+
+            let velocity = new THREE.Vector3();
+            let forward = new THREE.Vector3(0, 0, 1).applyQuaternion(player.quaternion);
+            let right = new THREE.Vector3(1, 0, 0).applyQuaternion(player.quaternion);
+            
+            forward.y = 0;
+            right.y = 0;
+
+            const isMoving = keys['w'] || keys['s'] || keys['a'] || keys['d'];
+
+            if (keys['w']) velocity.add(forward.normalize().multiplyScalar(speed));
+            if (keys['s']) velocity.sub(forward.normalize().multiplyScalar(speed * 0.5));
+            if (keys['d']) velocity.sub(right.normalize().multiplyScalar(speed * 0.7));
+            if (keys['a']) velocity.add(right.normalize().multiplyScalar(speed * 0.7));
+
+            player.position.add(velocity);
+
+            // Adjust Y position to stay on terrain
+            const currentX = player.position.x;
+            const currentZ = player.position.z;
+            const height = getTerrainHeight(currentX, currentZ);
+            player.position.y = 4 + height;
+
+            // Clamp player position within the terrain bounds (e.g., -240 to 240)
+            const halfTerrain = terrainSize / 2 - 10;
+            player.position.x = Math.max(-halfTerrain, Math.min(halfTerrain, player.position.x));
+            player.position.z = Math.max(-halfTerrain, Math.min(halfTerrain, player.position.z));
+
+
+            player.rotation.y = -mouseX; 
+            
+            return isMoving; // Return movement status for animation logic
+        }
+
+        function updateCamera() {
+            // 1. Calculate the desired pitch angle based on mouseY input
+            // normalizedMouseY: map mouseY from [-maxMouseY, maxMouseY] to [0, 1]
+            const normalizedMouseY = (mouseY + maxMouseY) / (2 * maxMouseY); 
+            // pitchDeg: map [0, 1] to [minPitchDeg, maxPitchDeg]
+            const pitchDeg = minPitchDeg + normalizedMouseY * (maxPitchDeg - minPitchDeg);
+            const pitchRad = THREE.MathUtils.degToRad(pitchDeg);
+
+            // 2. Calculate new Y and Z offsets based on pitch and fixed distance
+            // Y offset (up/down) = Distance * sin(pitch)
+            // Z offset (forward/backward) = Distance * cos(pitch)
+            const yOffset = baseCameraDistance * Math.sin(pitchRad); 
+            const zOffset = baseCameraDistance * Math.cos(pitchRad) * -1; // Must be negative (behind player)
+
+            const offset = new THREE.Vector3(0, yOffset, zOffset);
+                    
+            // 3. Apply player rotation (yaw) to the offset
+            offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), player.rotation.y);
+
+            // 4. Update camera position and target
+            camera.position.copy(player.position).add(offset);
+            const lookAtPoint = player.position.clone(); 
+            camera.lookAt(lookAtPoint);
+        }
+
+        function updateHPLabel(enemy) {
+            const label = enemy.children.find(c => c.name === 'HPLabel');
+            if (label && label.material.map && label.material.map.image) {
+                const hp = Math.max(0, Math.ceil(enemy.health));
+                const canvas = label.material.map.image;
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+                ctx.fillRect(0, 0, 256, 64);
+                ctx.font = 'bold 40px Arial';
+                ctx.fillStyle = 'white';
+                ctx.textAlign = 'center';
+                ctx.fillText(`HP: ${hp}`, 128, 45);
+                label.material.map.needsUpdate = true;
+            }
+        }
+
+        /**
+         * Handles player firing, checking for hits, updating XP/Level, and visual effects.
+         */
+        function fireWeapon() {
+            const currentTime = performance.now();
+            const weapon = playerStats.weapon;
+            if (currentTime < lastFireTime + weapon.fireRate) return;
+
+            lastFireTime = currentTime;
+            
+            // Find the gun mesh and calculate world position for fire origin
+            const gunMesh = player.children.find(c => c.name === 'Gun');
+            const fireOrigin = new THREE.Vector3();
+            if (gunMesh) {
+                gunMesh.getWorldPosition(fireOrigin); 
+            } else {
+                 fireOrigin.copy(player.position).add(new THREE.Vector3(0, 4, 0)); // Fallback to center of mecha
+            }
+
+            // 3. Raycaster direction (based on mecha's forward direction)
+            const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(player.quaternion);
+            raycaster.set(fireOrigin, forward); 
+
+            // 4. Check for intersection with ONLY Enemies
+            const meshes = enemies.flatMap(group => group.children.filter(c => c.type !== 'Sprite'));
+            const intersects = raycaster.intersectObjects(meshes, true);
+            const damage = weapon.damage + (playerLevel - 1) * 5; // Damage scales with level
+            
+            let targetDistance = 300; // Max visual range
+
+            if (intersects.length > 0) {
+                const hit = intersects[0];
+                targetDistance = hit.distance;
+                let hitObject = hit.object;
+                
+                // Traverse up to find the enemy group
+                while (hitObject) {
+                    if (hitObject.userData && hitObject.userData.isEnemy) break;
+                    hitObject = hitObject.parent;
+                }
+                
+                if (hitObject && enemies.includes(hitObject)) {
+                    hitObject.health -= damage; 
+                    updateHPLabel(hitObject);
+                    
+                    if (hitObject.health <= 0) {
+                        // Enemy Destroyed - Reward XP
+                        // Lifesteal: Player heals based on enemy's max health
+                        playerHealth = Math.min(playerHealth + hitObject.maxHealth, playerStats.health);
+                        document.getElementById('hull-integrity').innerText = Math.floor(playerHealth);
+                        
+                        // Cleanup
+                        scene.remove(hitObject);
+                        enemies = enemies.filter(e => e !== hitObject);
+                        hitObject.traverse(child => {
+                            if (child.geometry) child.geometry.dispose();
+                            if (child.material) {
+                                if (child.material.map) child.material.map.dispose();
+                                child.material.dispose();
+                            }
+                        });
+                        
+                        playerKills++;
+                        playerXP += XP_PER_KILL;
+
+                        // Check for level up
+                        if (playerXP >= playerLevel * XP_PER_LEVEL) {
+                            playerLevel++;
+                            playerXP = 0; 
+                            
+                            // Apply Level Up Bonuses
+                            speed *= 1.1; 
+                            playerStats.weapon.damage = Math.round(playerStats.weapon.damage * 1.05); // Small damage boost
+                            console.log(`LEVEL UP! New Level: ${playerLevel}. Speed and Damage improved.`);
+                        }
+                        
+                        // Update HUD
+                        document.getElementById('player-kills').innerText = playerKills;
+                        document.getElementById('player-level').innerText = playerLevel;
+                        document.getElementById('enemies-left').innerText = enemies.length; 
+                        
+                    } else {
+                         // Hit feedback
+                         hitObject.children.forEach(child => {
+                            if (child.name === 'Body' || child.name === 'Head') {
+                                child.material.color.setHex(0xffffff);
+                                setTimeout(() => {
+                                    if (hitObject.health > 0) child.material.color.setHex(0xcc0000);
+                                }, 50);
+                            }
+                        });
+                    }
+                }
+            }
+
+            // 5. Visual Laser Beam Feedback (starting from gun position)
+            const laserGeometry = new THREE.CylinderGeometry(0.2, 0.2, targetDistance, 8);
+            laserGeometry.rotateX(-Math.PI / 2); // Align with Z axis
+            laserGeometry.translate(0, 0, targetDistance / 2); // Start at origin, extend forward
+
+            const laserMaterial = new THREE.MeshBasicMaterial({ 
+                color: 0x00ffff, 
+                transparent: true, 
+                opacity: 0.6,
+                blending: THREE.AdditiveBlending 
+            });
+            const laser = new THREE.Mesh(laserGeometry, laserMaterial);
+            
+            laser.position.copy(fireOrigin); 
+            laser.quaternion.copy(player.quaternion);
+
+            scene.add(laser);
+
+            setTimeout(() => {
+                scene.remove(laser);
+                laser.geometry.dispose();
+                laser.material.dispose();
+            }, 50);
+        }
+        
+        function fireEnemyWeapon(enemy) {
+            const direction = player.position.clone().sub(enemy.position).normalize();
+            
+            const projectileGeometry = new THREE.SphereGeometry(0.5, 8, 8);
+            const projectileMaterial = new THREE.MeshBasicMaterial({ color: 0xffa500 }); 
+            const projectile = new THREE.Mesh(projectileGeometry, projectileMaterial);
+
+            // Fire from the enemy's gun, or fallback to center
+            const gunMesh = enemy.children.find(c => c.name === 'Gun');
+            const fireOrigin = new THREE.Vector3();
+             if (gunMesh) {
+                gunMesh.getWorldPosition(fireOrigin); 
+            } else {
+                 fireOrigin.copy(enemy.position).add(new THREE.Vector3(0, 4, 0));
+            }
+            
+            projectile.position.copy(fireOrigin);
+            
+            // Increased projectile speed to make it a better threat
+            projectile.velocity = direction.multiplyScalar(2.5); 
+            projectile.owner = enemy; // Track who fired this for lifesteal
+            
+            scene.add(projectile);
+            enemyProjectiles.push(projectile);
+
+            // Look at player when firing
+            enemy.lookAt(player.position);
+            enemy.rotation.x = 0; 
+            enemy.rotation.z = 0;
+            
+            enemy.children.forEach(child => {
+                 if (child.name === 'Body' || child.name === 'Head') {
+                    child.material.color.setHex(0xffffff);
+                    setTimeout(() => {
+                        if (enemies.includes(enemy)) child.material.color.setHex(0xcc0000);
+                    }, 50);
+                 }
+            });
+        }
+
+        function updateProjectiles() {
+            const nextProjectiles = [];
+            const playerBoundingSphere = new THREE.Sphere(player.position.clone(), 4); 
+            const enemyDamage = enemyStats.weapon.damage;
+
+            enemyProjectiles.forEach(p => {
+                p.position.add(p.velocity);
+
+                if (playerBoundingSphere.containsPoint(p.position)) {
+                    takeDamage(enemyDamage);
+                    
+                    // Enemy Lifesteal: Heal the shooter if they are still alive
+                    if (p.owner && enemies.includes(p.owner)) {
+                        p.owner.health += enemyDamage;
+                        updateHPLabel(p.owner);
+                    }
+
+                    scene.remove(p);
+                    p.geometry.dispose();
+                    p.material.dispose();
+                    return; 
+                }
+
+                if (p.position.distanceTo(player.position) > spawnRadius * 2) {
+                    scene.remove(p);
+                    p.geometry.dispose();
+                    p.material.dispose();
+                    return;
+                }
+
+                nextProjectiles.push(p);
+            });
+            enemyProjectiles = nextProjectiles;
+        }
+
+        function takeDamage(damage) {
+            if (gameOver) return;
+            
+            playerHealth -= damage;
+            playerHealth = Math.max(0, playerHealth);
+
+            const hullElement = document.getElementById('hull-integrity');
+            hullElement.innerText = playerHealth;
+            
+            // Color feedback based on health
+            const maxHealth = playerStats.health;
+            if (playerHealth > maxHealth * 0.5) {
+                hullElement.classList.remove('text-yellow-500', 'text-red-500');
+                hullElement.classList.add('text-mech-green');
+            } else if (playerHealth > maxHealth * 0.1) {
+                hullElement.classList.remove('text-mech-green', 'text-red-500');
+                hullElement.classList.add('text-yellow-500');
+            } else {
+                hullElement.classList.remove('text-mech-green', 'text-yellow-500');
+                hullElement.classList.add('text-red-500');
+            }
+
+            // Visual feedback on player mecha (flash red)
+            player.children.forEach(child => {
+                 if (child.name === 'Body' || child.name === 'Head') {
+                    child.material.color.setHex(0xff0000);
+                    setTimeout(() => child.material.color.setHex(0x5a2d82), 100);
+                 }
+            });
+
+            if (playerHealth === 0) {
+                endGame('MISSION FAILED');
+            }
+        }
+        
+        function moveEnemies() {
+            if (gameOver) return;
+            
+            const currentTime = performance.now();
+            const playerPos = player.position.clone();
+            
+            // Use a higher multiplier to make enemy firing less frequent but reliable
+            const ENEMY_FIRE_RATE = enemyStats.weapon.fireRate * 15; // e.g., 100ms * 15 = 1500ms (1.5 seconds)
+
+            enemies.forEach(enemy => {
+                const distance = enemy.position.distanceTo(playerPos);
+                
+                // Move towards player if far away
+                if (distance > 50) {
+                    const direction = playerPos.clone().sub(enemy.position).normalize();
+                    direction.y = 0; 
+                    enemy.position.add(direction.multiplyScalar(enemySpeed));
+                    
+                    const height = getTerrainHeight(enemy.position.x, enemy.position.z);
+                    enemy.position.y = 4 + height;
+                }
+
+                // Fire at player if close enough and cooldown is ready
+                // Now uses enemy.lastFireTime for individual cooldown
+                if (currentTime > enemy.lastFireTime + ENEMY_FIRE_RATE && distance < 100) {
+                    fireEnemyWeapon(enemy);
+                    enemy.lastFireTime = currentTime; 
+                }
+
+                // Collision damage check
+                const enemyRadius = 3; 
+                const enemyBoundingSphere = new THREE.Sphere(enemy.position.clone(), enemyRadius); 
+
+                if (enemyBoundingSphere.containsPoint(playerPos)) {
+                    takeDamage(10); 
+                    enemy.health += 10; // Enemy heals on collision
+                    updateHPLabel(enemy);
+                }
+            });
+        }
+
+        function endGame(message) {
+            gameOver = true;
+            
+            const panel = document.getElementById('message-panel');
+            const text = document.getElementById('message-text');
+
+            text.innerText = message;
+            
+            if (message === 'WAVE CLEARED') {
+                panel.classList.remove('bg-red-900');
+                panel.classList.add('bg-mech-green');
+            } else if (message.includes('FAILED')) {
+                panel.classList.remove('bg-mech-green');
+                panel.classList.add('bg-red-900');
+            }
+
+            panel.classList.remove('hidden');
+            panel.classList.add('scale-100');
+
+            document.exitPointerLock();
+            document.removeEventListener('keydown', onKeyDown);
+            document.removeEventListener('keyup', onKeyUp);
+        }
+        
+        /**
+         * Draws the 2D minimap overlay showing player and enemy positions.
+         */
+        function drawMinimap() {
+            if (!minimapContext || gameOver) return;
+
+            // Clear the canvas
+            minimapContext.clearRect(0, 0, minimapSize, minimapSize);
+            
+            // Draw background 
+            minimapContext.fillStyle = 'rgba(0, 0, 0, 0.3)';
+            minimapContext.fillRect(0, 0, minimapSize, minimapSize);
+
+            // Conversion function: World X, Z to Map X, Y
+            const worldToMap = (worldCoord) => worldCoord * minimapScale + minimapCenter;
+            
+            // 1. Draw Player (Blue Dot)
+            if (player) {
+                const px = worldToMap(player.position.x);
+                const py = worldToMap(-player.position.z); 
+
+                minimapContext.beginPath();
+                minimapContext.arc(px, py, 4, 0, Math.PI * 2);
+                minimapContext.fillStyle = 'rgba(30, 64, 175, 1)'; // mech-blue
+                minimapContext.fill();
+
+                // Draw player orientation (a small line indicating direction)
+                const direction = new THREE.Vector3(0, 0, 1).applyQuaternion(player.quaternion);
+                const angle = Math.atan2(direction.x, direction.z);
+
+                const dirX = px + Math.sin(angle) * 5;
+                const dirY = py - Math.cos(angle) * 5; 
+
+                minimapContext.beginPath();
+                minimapContext.moveTo(px, py);
+                minimapContext.lineTo(dirX, dirY);
+                minimapContext.strokeStyle = 'white';
+                minimapContext.lineWidth = 2;
+                minimapContext.stroke();
+            }
+
+            // 2. Draw Enemies (Red Dots)
+            enemies.forEach(enemy => {
+                const ex = worldToMap(enemy.position.x);
+                const ey = worldToMap(-enemy.position.z);
+
+                minimapContext.beginPath();
+                minimapContext.arc(ex, ey, 3, 0, Math.PI * 2);
+                minimapContext.fillStyle = 'rgba(220, 38, 38, 1)'; // mech-red
+                minimapContext.fill();
+            });
+        }
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+
+            if (!gameOver) {
+                const isMoving = updateMovement();
+                updateCamera();
+                moveEnemies(); 
+                updateProjectiles(); 
+                drawMinimap(); 
+
+                // Continuous Spawning Logic
+                const currentTime = performance.now();
+                ENEMY_TYPES.forEach(type => {
+                    if (currentTime > type.lastSpawn + type.interval) {
+                        spawnEnemy(type);
+                        type.lastSpawn = currentTime;
+                    }
+                });
+
+                // Leg Animation Logic
+                if (player.leftLeg && player.rightLeg) {
+                    if (isMoving) {
+                        // Swing legs if moving
+                        legAnimationTime += delta * 15; 
+                    } else {
+                        // Smoothly center the legs when stopped
+                        const targetRotation = 0;
+                        const currentRotation = player.leftLeg.rotation.x;
+                        const difference = targetRotation - currentRotation;
+                        
+                        if (Math.abs(difference) > 0.01) {
+                            legAnimationTime += delta * 5;
+                            if (Math.abs(Math.sin(legAnimationTime)) < 0.05) {
+                                legAnimationTime = 0;
+                            }
+                        } else {
+                            legAnimationTime = 0;
+                        }
+                    }
+                    
+                    const rotation = Math.sin(legAnimationTime) * maxLegRotation;
+                    player.leftLeg.rotation.x = rotation;
+                    player.rightLeg.rotation.x = -rotation;
+                }
+
+                if (isFiring) {
+                    fireWeapon();
+                }
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // --- INITIALIZATION ---
+        window.onload = async function () {
+            // Attach event listeners immediately
+            document.getElementById('player-selectors').addEventListener('click', handleConfigSelection);
+            document.getElementById('enemy-selectors').addEventListener('click', handleConfigSelection);
+            document.getElementById('start-game-button').addEventListener('click', startGame);
+
+            // Show config screen first
+            showConfigScreen();
+
+            await setupFirebase();
+        }
+
+    </script>
+</body>
+</html>
