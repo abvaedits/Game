@@ -94,6 +94,18 @@
     <div id="config-screen" class="relative min-h-screen bg-config-bg p-8 flex flex-col items-center justify-start z-20 overflow-y-auto">
         <h1 class="text-4xl font-extrabold text-mech-green mb-8 shadow-md p-2 rounded-lg mt-4">MECHA BAY CONFIGURATION</h1>
         
+        <!-- Arena Selection -->
+        <div class="bg-bg-dark/90 p-6 rounded-xl shadow-2xl border-4 border-gray-500/50 w-full max-w-6xl mb-8">
+            <h2 class="text-2xl font-bold text-gray-200 mb-4 border-b border-gray-500 pb-2">MISSION ENVIRONMENT</h2>
+            <div id="arena-selector" class="flex flex-wrap gap-4">
+                <button data-value="grasslands" class="config-button selected bg-mech-blue">Grasslands</button>
+                <button data-value="volcanic" class="config-button bg-gray-600">Volcanic Forge</button>
+                <button data-value="frozen" class="config-button bg-gray-600">Frozen Wilds</button>
+                <button data-value="night" class="config-button bg-gray-600">Winter Night</button>
+                <button data-value="neotokyo" class="config-button bg-gray-600">Neo Tokyo Rooftops</button>
+            </div>
+        </div>
+
         <div class="flex flex-col lg:flex-row gap-10 w-full max-w-6xl mb-8">
             <!-- Player Mecha Configuration -->
             <div class="bg-bg-dark/90 p-6 rounded-xl shadow-2xl border-4 border-mech-blue/50 flex-1">
@@ -283,6 +295,72 @@
             gun: 'rapid',
         };
 
+        // --- ARENA CONFIGURATION ---
+        const ARENA_CONFIGS = {
+            grasslands: {
+                name: "Grasslands",
+                skyColor: 0x87CEEB,
+                fogColor: 0x8fbc8f,
+                groundColors: { base: [0.15, 0.45, 0.1], var: [0.05, 0.15, 0.05] }, 
+                waterColor: 0x1565c0,
+                lightColor: 0xffffee,
+                lightIntensity: 1.5,
+                ambientColor: 0x444444,
+                treeType: 'normal',
+                isCity: false
+            },
+            volcanic: {
+                name: "Volcanic Forge",
+                skyColor: 0x2a0a0a,
+                fogColor: 0x330000,
+                groundColors: { base: [0.1, 0.1, 0.1], var: [0.1, 0.05, 0.05] }, 
+                waterColor: 0xff4500, // Lava
+                lightColor: 0xffaa00,
+                lightIntensity: 1.0,
+                ambientColor: 0x220000,
+                treeType: 'dead',
+                isCity: false
+            },
+            frozen: {
+                name: "Frozen Wilds",
+                skyColor: 0xdbe9f4,
+                fogColor: 0xcce0ff,
+                groundColors: { base: [0.9, 0.95, 1.0], var: [0.05, 0.05, 0.1] }, 
+                waterColor: 0xaaddff, // Ice
+                lightColor: 0xeef6ff,
+                lightIntensity: 1.2,
+                ambientColor: 0x666666,
+                treeType: 'snowy',
+                isCity: false
+            },
+            night: {
+                name: "Winter Night",
+                skyColor: 0x050510,
+                fogColor: 0x0a0a1a,
+                groundColors: { base: [0.4, 0.4, 0.5], var: [0.05, 0.05, 0.1] }, 
+                waterColor: 0x112244,
+                lightColor: 0x88aaff, // Moonlight
+                lightIntensity: 0.5,
+                ambientColor: 0x111122,
+                treeType: 'snowy_dark',
+                isCity: false
+            },
+            neotokyo: {
+                name: "Neo Tokyo",
+                skyColor: 0x050010,
+                fogColor: 0x220033, 
+                groundColors: { base: [0.2, 0.2, 0.25], var: [0.05, 0.05, 0.05] }, 
+                waterColor: 0x000000, // Abyss
+                lightColor: 0x00ffcc, // Cyan Neon
+                lightIntensity: 0.8,
+                ambientColor: 0x220044,
+                treeType: 'none',
+                isCity: true
+            }
+        };
+
+        let selectedArena = 'grasslands';
+
         // Current configurations being built by the user
         let playerSelection = JSON.parse(JSON.stringify(DEFAULT_SELECTION));
         let enemySelection = JSON.parse(JSON.stringify(DEFAULT_SELECTION));
@@ -299,6 +377,7 @@
         let speed = 0; // Calculated in startGame
         let playerHealth = 0; // Calculated in startGame
         let gameOver = false;
+        let isScoped = false; // Scoping state
         
         // Combat/Autofire Variables
         let isFiring = false; 
@@ -313,6 +392,7 @@
         
         // Enemy Management Variables (Continuous Spawning)
         let enemies = []; 
+        let obstacles = []; // Store obstacles for collision
         let enemySpeed = 0; // Calculated in startGame
         const minEnemies = 3; // Minimum number of enemies to maintain
         const spawnRadius = 150; 
@@ -354,10 +434,23 @@
 
         // Utility: Get Terrain Height at X, Z (Simplified using a noise function)
         function getTerrainHeight(x, z) {
-             // Replicate the noise function used in terrain generation
-            let y = Math.sin(x / 30) * 2 + Math.cos(z / 30) * 2;
-            y += (Math.sin(x / 10) * Math.cos(z / 10) * 0.5) * (Math.random() * 0.5 + 0.5);
-            return Math.max(0, y);
+            const arena = ARENA_CONFIGS[selectedArena];
+            
+            if (arena.isCity) {
+                // Blocky City Terrain
+                const blockSize = 40;
+                const bx = Math.floor((x + 1000) / blockSize); // Offset to avoid negative issues
+                const bz = Math.floor((z + 1000) / blockSize);
+                // Pseudo-random deterministic height
+                const h = Math.sin(bx * 12.9898 + bz * 78.233) * 43758.5453;
+                const heightLevel = Math.floor((h - Math.floor(h)) * 4); // 0 to 3
+                return Math.max(0, heightLevel * 8); 
+            } else {
+                // Natural Terrain
+                let y = Math.sin(x / 30) * 2 + Math.cos(z / 30) * 2;
+                y += (Math.sin(x / 10) * Math.cos(z / 10) * 0.5) * 0.8; // Removed random for stability
+                return Math.max(0, y);
+            }
         }
 
         function calculateStats(selection) {
@@ -424,6 +517,22 @@
             button.classList.remove('bg-gray-600');
             
             checkConfigCompletion();
+        }
+
+        function handleArenaSelection(event) {
+            const button = event.target.closest('.config-button');
+            if (!button) return;
+            
+            selectedArena = button.dataset.value;
+            
+            // Update visual state
+            const buttons = document.querySelectorAll('#arena-selector .config-button');
+            buttons.forEach(btn => {
+                btn.classList.remove('selected', 'bg-mech-blue');
+                btn.classList.add('bg-gray-600');
+            });
+            button.classList.add('selected', 'bg-mech-blue');
+            button.classList.remove('bg-gray-600');
         }
 
         function checkConfigCompletion() {
@@ -493,6 +602,7 @@
             document.getElementById('enemies-left').innerText = enemies.length;
             document.getElementById('player-level').innerText = playerLevel;
             document.getElementById('player-kills').innerText = playerKills;
+            initAudio(); // Initialize Audio Context
 
 
             // Initialize and start Three.js
@@ -506,11 +616,75 @@
 
         // --- THREE.JS CORE FUNCTIONS ---
 
+        // --- AUDIO SYSTEM ---
+        let audioCtx;
+        
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        function playSound(type) {
+            if (!audioCtx) return;
+            
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            const now = audioCtx.currentTime;
+            
+            switch (type) {
+                case 'shoot':
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(800, now);
+                    osc.frequency.exponentialRampToValueAtTime(100, now + 0.15);
+                    gain.gain.setValueAtTime(0.05, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+                    osc.start(now);
+                    osc.stop(now + 0.15);
+                    break;
+                case 'hit':
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(150, now);
+                    osc.frequency.exponentialRampToValueAtTime(0.01, now + 0.1);
+                    gain.gain.setValueAtTime(0.1, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+                    osc.start(now);
+                    osc.stop(now + 0.1);
+                    break;
+                case 'explosion':
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(100, now);
+                    osc.frequency.exponentialRampToValueAtTime(10, now + 0.4);
+                    gain.gain.setValueAtTime(0.2, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+                    osc.start(now);
+                    osc.stop(now + 0.4);
+                    break;
+                case 'damage':
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(300, now);
+                    osc.frequency.linearRampToValueAtTime(200, now + 0.2);
+                    gain.gain.setValueAtTime(0.2, now);
+                    gain.gain.linearRampToValueAtTime(0.001, now + 0.2);
+                    osc.start(now);
+                    osc.stop(now + 0.2);
+                    break;
+            }
+        }
+
         function initThreeJs() {
+            const arena = ARENA_CONFIGS[selectedArena];
+
             // 1. Scene Setup - Updated for a bright, grassy environment
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x87CEEB); // Sky Blue
-            scene.fog = new THREE.Fog(0x8fbc8f, 10, 250); // Darker sea green fog
+            scene.background = new THREE.Color(arena.skyColor); 
+            scene.fog = new THREE.Fog(arena.fogColor, 10, 250); 
 
             // 2. Camera Setup
             const aspectRatio = window.innerWidth / window.innerHeight;
@@ -522,14 +696,17 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.outputEncoding = THREE.sRGBEncoding;
             container.appendChild(renderer.domElement);
 
             // 4. Lighting
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.8); 
-            scene.add(ambientLight);
+            // Improved lighting for better 3D look
+            const hemiLight = new THREE.HemisphereLight(arena.skyColor, arena.ambientColor, 0.6);
+            scene.add(hemiLight);
 
-            const directionalLight = new THREE.DirectionalLight(0xffffee, 3); 
-            directionalLight.position.set(20, 50, 20);
+            const directionalLight = new THREE.DirectionalLight(arena.lightColor, arena.lightIntensity); 
+            directionalLight.position.set(50, 100, 50);
             directionalLight.castShadow = true;
             directionalLight.shadow.mapSize.width = 2048;
             directionalLight.shadow.mapSize.height = 2048;
@@ -540,8 +717,10 @@
             // 5. Game Objects
             createTerrain();
             createObstacles();
-            createTrees();
-            createTreestype();
+            if (arena.treeType !== 'none') {
+                createTrees();
+                createTreestype();
+            }
             player = createMecha(true, playerStats.parts);
             scene.add(player);
 
@@ -562,6 +741,8 @@
         }
 
         function createTerrain() {
+            const arena = ARENA_CONFIGS[selectedArena];
+            
             // A. Terrain (Hills and Grass - Vertex colored for variation)
             const groundGeometry = new THREE.PlaneGeometry(terrainSize, terrainSize, terrainSegments, terrainSegments);
             groundGeometry.rotateX(-Math.PI / 2); 
@@ -574,21 +755,19 @@
                 const x = groundGeometry.attributes.position.array[i];
                 const z = groundGeometry.attributes.position.array[i + 2];
                 
-                let y = Math.sin(x / 30) * 2 + Math.cos(z / 30) * 2;
-                y += (Math.sin(x / 10) * Math.cos(z / 10) * 0.5) * (Math.random() * 0.5 + 0.5);
-                y = Math.max(0, y); 
+                const y = getTerrainHeight(x, z);
 
                 groundGeometry.attributes.position.array[i + 1] = y;
 
                 const heightRatio = y / maxHeight;
                 
                 // Deeper, more varied grass colors
-                let r = 0.15 + Math.random() * 0.05; 
-                let g = 0.45 + Math.random() * 0.15;
-                let b = 0.1 + Math.random() * 0.05;
+                let r = arena.groundColors.base[0] + (Math.random() * arena.groundColors.var[0]); 
+                let g = arena.groundColors.base[1] + (Math.random() * arena.groundColors.var[1]);
+                let b = arena.groundColors.base[2] + (Math.random() * arena.groundColors.var[2]);
 
                 // Make higher areas slightly lighter/browner (simulating dry patches)
-                if (heightRatio > 0.5) {
+                if (heightRatio > 0.5 && !arena.isCity) {
                     r += heightRatio * 0.1;
                     g -= heightRatio * 0.1;
                 }
@@ -599,14 +778,27 @@
             }
             groundGeometry.computeVertexNormals();
 
-            const groundMaterial = new THREE.MeshPhongMaterial({ vertexColors: true, side: THREE.DoubleSide });
+            const groundMaterial = new THREE.MeshStandardMaterial({ 
+                vertexColors: true, 
+                side: THREE.DoubleSide, 
+                roughness: arena.isCity ? 0.4 : 0.8,
+                metalness: arena.isCity ? 0.3 : 0.0
+            });
             const ground = new THREE.Mesh(groundGeometry, groundMaterial);
             ground.receiveShadow = true;
             scene.add(ground);
             
             // B. Ocean/Sea
             const oceanGeometry = new THREE.PlaneGeometry(terrainSize * 2, terrainSize * 2);
-            const oceanMaterial = new THREE.MeshPhongMaterial({ color: 0x1565c0, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
+            const oceanMaterial = new THREE.MeshStandardMaterial({ 
+                color: arena.waterColor, 
+                transparent: true, 
+                opacity: 0.9, 
+                side: THREE.DoubleSide, 
+                roughness: 0.1,
+                emissive: arena.name === 'Volcanic Forge' ? 0xff0000 : 0x000000,
+                emissiveIntensity: arena.name === 'Volcanic Forge' ? 0.5 : 0
+            });
             const ocean = new THREE.Mesh(oceanGeometry, oceanMaterial);
             ocean.rotation.x = Math.PI / 2;
             ocean.position.y = -5; 
@@ -614,7 +806,9 @@
         }
 
         function createObstacles() {
-            const obstacleMaterial = new THREE.MeshPhongMaterial({ color: 0x4f4f4f });
+            const arena = ARENA_CONFIGS[selectedArena];
+            const color = arena.isCity ? 0x222222 : 0x4f4f4f;
+            const obstacleMaterial = new THREE.MeshStandardMaterial({ color: color, roughness: 0.6 });
             const positions = [
                 new THREE.Vector3(50, 0, -50),
                 new THREE.Vector3(-30, 0, -80),
@@ -628,10 +822,12 @@
                 obs.position.y = 5 + height; 
                 obs.castShadow = true;
                 scene.add(obs);
+                obstacles.push(obs); // Add to collision array
             });
         }
 
         function createTrees() {
+            const arena = ARENA_CONFIGS[selectedArena];
             const treeCount = 100;
             
             for (let i = 0; i < treeCount; i++) {
@@ -650,26 +846,40 @@
                 const tree = new THREE.Group();
                 tree.position.set(x, y, z);
 
+                let trunkColor = 0x5c4033;
+                let leafColor = 0x228b22;
+
+                if (arena.treeType === 'dead') {
+                    trunkColor = 0x222222;
+                    leafColor = 0x000000; // No leaves effectively, or black ash
+                } else if (arena.treeType === 'snowy' || arena.treeType === 'snowy_dark') {
+                    trunkColor = 0x332211;
+                    leafColor = 0xffffff;
+                }
+
                 // Trunk
                 const trunkGeo = new THREE.CylinderGeometry(5, 7, 20, 5);
-                const trunkMat = new THREE.MeshPhongMaterial({ color: 0x5c4033, flatShading: true });
+                const trunkMat = new THREE.MeshStandardMaterial({ color: trunkColor, roughness: 0.9 });
                 const trunk = new THREE.Mesh(trunkGeo, trunkMat);
                 trunk.position.y = 1.5;
                 trunk.castShadow = true;
                 tree.add(trunk);
 
                 // Foliage (Cone)
-                const leavesGeo = new THREE.ConeGeometry(10.5, 30, 25);
-                const leavesMat = new THREE.MeshPhongMaterial({ color: 0x228b22, flatShading: true });
-                const leaves = new THREE.Mesh(leavesGeo, leavesMat);
-                leaves.position.y = 25.5; // 3 (trunk height) + half leaves height - overlap
-                leaves.castShadow = true;
-                tree.add(leaves);
+                if (arena.treeType !== 'dead') {
+                    const leavesGeo = new THREE.ConeGeometry(10.5, 30, 25);
+                    const leavesMat = new THREE.MeshStandardMaterial({ color: leafColor, roughness: 0.8 });
+                    const leaves = new THREE.Mesh(leavesGeo, leavesMat);
+                    leaves.position.y = 25.5; // 3 (trunk height) + half leaves height - overlap
+                    leaves.castShadow = true;
+                    tree.add(leaves);
+                }
 
                 scene.add(tree);
             }
         }
  function createTreestype() {
+            const arena = ARENA_CONFIGS[selectedArena];
             const treeCount = 100;
             
             for (let i = 0; i < treeCount; i++) {
@@ -688,21 +898,34 @@
                 const tree = new THREE.Group();
                 tree.position.set(x, y, z);
 
+                let trunkColor = 0x5c4033;
+                let leafColor = 0x228b22;
+
+                if (arena.treeType === 'dead') {
+                    trunkColor = 0x222222;
+                    leafColor = 0x000000; 
+                } else if (arena.treeType === 'snowy' || arena.treeType === 'snowy_dark') {
+                    trunkColor = 0x332211;
+                    leafColor = 0xddddff;
+                }
+
                 // Trunk
                 const trunkGeo = new THREE.CylinderGeometry(2, 4, 10, 5);
-                const trunkMat = new THREE.MeshPhongMaterial({ color: 0x5c4033, flatShading: true });
+                const trunkMat = new THREE.MeshStandardMaterial({ color: trunkColor, roughness: 0.9 });
                 const trunk = new THREE.Mesh(trunkGeo, trunkMat);
                 trunk.position.y = 1.5;
                 trunk.castShadow = true;
                 tree.add(trunk);
 
                 // Foliage (Cone)
-                const leavesGeo = new THREE.ConeGeometry(6.5, 15, 12);
-                const leavesMat = new THREE.MeshPhongMaterial({ color: 0x228b22, flatShading: true });
-                const leaves = new THREE.Mesh(leavesGeo, leavesMat);
-                leaves.position.y = 10.5; // 3 (trunk height) + half leaves height - overlap
-                leaves.castShadow = true;
-                tree.add(leaves);
+                if (arena.treeType !== 'dead') {
+                    const leavesGeo = new THREE.ConeGeometry(6.5, 15, 12);
+                    const leavesMat = new THREE.MeshStandardMaterial({ color: leafColor, roughness: 0.8 });
+                    const leaves = new THREE.Mesh(leavesGeo, leavesMat);
+                    leaves.position.y = 10.5; // 3 (trunk height) + half leaves height - overlap
+                    leaves.castShadow = true;
+                    tree.add(leaves);
+                }
 
                 scene.add(tree);
             }
@@ -735,66 +958,177 @@
             mecha.scale.set(scale, scale, scale);
             mecha.userData.isEnemy = !isPlayer;
 
-            const color = isPlayer ? 0x5a2d82 : 0xcc0000;
-            const bodySize = parts.body.includes('heavy') ? [5, 6, 5] : [4, 6, 4];
-            
-            // Body (Main Cube)
-            const bodyGeometry = new THREE.BoxGeometry(bodySize[0], bodySize[1], bodySize[2]);
-            const bodyMaterial = new THREE.MeshPhongMaterial({ color: color, flatShading: true });
-            const bodyMesh = new THREE.Mesh(bodyGeometry, bodyMaterial);
-            bodyMesh.position.y = bodySize[1] / 2;
-            bodyMesh.name = 'Body';
-            mecha.add(bodyMesh);
+            // Helper to create detailed hands
+            function createHand(material) {
+                const group = new THREE.Group();
+                // Palm
+                const palm = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.25), material);
+                palm.position.y = -0.25;
+                palm.castShadow = true;
+                group.add(palm);
+                // Fingers
+                const fingerGeo = new THREE.BoxGeometry(0.1, 0.4, 0.1);
+                for(let i=0; i<4; i++) {
+                    const finger = new THREE.Mesh(fingerGeo, material);
+                    finger.position.set(-0.15 + (i * 0.1), -0.7, 0);
+                    finger.castShadow = true;
+                    group.add(finger);
+                }
+                // Thumb
+                const thumb = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.3, 0.12), material);
+                thumb.position.set(0.3, -0.25, 0.1);
+                thumb.rotation.z = -0.5;
+                thumb.castShadow = true;
+                group.add(thumb);
+                return group;
+            }
 
-            // Head (Small cube on top)
-            const headGeometry = new THREE.BoxGeometry(2, 2, 2);
-            const headMaterial = new THREE.MeshPhongMaterial({ color: color + (parts.head.includes('armor') ? 0x222222 : 0xffffff) });
-            const headMesh = new THREE.Mesh(headGeometry, headMaterial);
-            headMesh.position.y = bodySize[1] + 1;
-            headMesh.name = 'Head';
-            mecha.add(headMesh);
-
-            // Legs setup (Groups for articulation)
-            const legGeometry = new THREE.BoxGeometry(1.5, 4, 1.5); 
-            const legMaterial = new THREE.MeshPhongMaterial({ color: 0x333333 });
+            // Humanoid Colors
+            const upperColor = isPlayer ?  0x60a5fa:  0xf87171; // Blue or Red Uniform
+            const lowerColor = isPlayer ?  0x1e40af: 0xdc2626; // Lighter Blue or Red for legs
+            const skinColor = 0xffdbac; // Basic skin tone
             
-            // Left Leg Group (pivot point at body connection)
+            // Materials (Standard for better lighting)
+            const upperMat = new THREE.MeshStandardMaterial({ 
+                color: upperColor, 
+                roughness: 0.5, 
+                metalness: 0.6 
+            });
+            const lowerMat = new THREE.MeshStandardMaterial({ 
+                color: lowerColor, 
+                roughness: 0.5, 
+                metalness: 0.6 
+            });
+            const skinMat = new THREE.MeshStandardMaterial({ 
+                color: skinColor, 
+                roughness: 0.3, 
+                metalness: 0.1 
+            });
+            const gunMat = new THREE.MeshStandardMaterial({ 
+                color: 0x222222, 
+                roughness: 0.4, 
+                metalness: 0.8 
+            });
+            
+            // 1. Torso (Body) - Flattened Cylinder
+            const torsoGeo = new THREE.CylinderGeometry(2.2, 1.4, 5, 8);
+            const torso = new THREE.Mesh(torsoGeo, upperMat);
+            torso.position.y = 6.5; // Hips at ~4, Torso center at 6.5
+            torso.scale.set(1, 1, 0.6); // Flatten the body
+            torso.castShadow = true;
+            torso.name = 'Body';
+            mecha.add(torso);
+
+            // Neck
+            const neckGeo = new THREE.CylinderGeometry(0.5, 0.5, 1.2, 8);
+            const neck = new THREE.Mesh(neckGeo, skinMat);
+            neck.position.y = 9.0; 
+            neck.castShadow = true;
+            mecha.add(neck);
+
+            // 2. Head - Sphere
+            const headGeo = new THREE.SphereGeometry(1.2, 16, 16);
+            const head = new THREE.Mesh(headGeo, skinMat);
+            head.position.y = 10.0; 
+            head.castShadow = true;
+            head.name = 'Head';
+            mecha.add(head);
+
+            // Hair
+            const hairGeo = new THREE.SphereGeometry(1.3, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2.5);
+            const hairMat = new THREE.MeshStandardMaterial({ color: 0x331a00, roughness: 0.9 });
+            const hair = new THREE.Mesh(hairGeo, hairMat);
+            hair.position.y = 10.0; 
+            mecha.add(hair);
+
+            // 3. Arms
+            const armGeo = new THREE.CylinderGeometry(0.5, 0.4, 4, 8);
+            
+            // Right Arm Group (Shoulder pivot)
+            const rightArmGroup = new THREE.Group();
+            rightArmGroup.position.set(2.2, 8.5, 0); 
+            // rightArmGroup.rotation.x = -Math.PI / 2; // Removed default aim, handled in animation
+            mecha.add(rightArmGroup);
+            
+            const rightArm = new THREE.Mesh(armGeo, upperMat);
+            rightArm.position.y = -2; 
+            rightArm.castShadow = true;
+            rightArmGroup.add(rightArm);
+            
+            // Hand (Right)
+            const rightHand = createHand(skinMat);
+            rightHand.position.y = -4;
+            rightArmGroup.add(rightHand);
+
+            // Gun (Detailed Model)
+            const gunGroup = new THREE.Group();
+            gunGroup.position.set(0, -4, 0); // Attached to hand
+            gunGroup.position.set(0, -5.5, 0); // Positioned below the hand
+            
+            const gunBody = new THREE.Mesh(new THREE.BoxGeometry(0.6, 2.0, 0.8), gunMat);
+            gunBody.position.y = 1.0; 
+            gunBody.position.y = 0; 
+            gunBody.castShadow = true;
+            gunGroup.add(gunBody);
+
+            const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 2.5, 8), gunMat);
+            barrel.position.y = 2.5;
+            barrel.position.y = -1.5;
+            barrel.castShadow = true;
+            gunGroup.add(barrel);
+            
+            gunGroup.name = 'Gun';
+            rightArmGroup.add(gunGroup);
+
+            // Left Arm Group
+            const leftArmGroup = new THREE.Group();
+            leftArmGroup.position.set(-2.2, 8.5, 0);
+            mecha.add(leftArmGroup);
+            
+            const leftArm = new THREE.Mesh(armGeo, upperMat);
+            leftArm.position.y = -2;
+            leftArm.castShadow = true;
+            leftArmGroup.add(leftArm);
+
+            // Hand (Left)
+            const leftHand = createHand(skinMat);
+            leftHand.position.y = -4;
+            leftHand.scale.x = -1; // Mirror for left hand
+            leftArmGroup.add(leftHand);
+
+            // 4. Legs
+            const legGeo = new THREE.CylinderGeometry(0.6, 0.5, 4.5, 8);
+
+            // Left Leg Group
             const leftLegGroup = new THREE.Group();
-            leftLegGroup.position.set(-bodySize[0] / 2, 0, 0); // Horizontal position relative to body
-            
-            const leftLegMesh = new THREE.Mesh(legGeometry, legMaterial);
-            leftLegMesh.position.y = -2; // Position mesh relative to its group origin (pivot)
-            leftLegGroup.add(leftLegMesh);
+            leftLegGroup.position.set(-1, 4, 0);
             mecha.add(leftLegGroup);
+            
+            const leftLeg = new THREE.Mesh(legGeo, lowerMat);
+            leftLeg.position.y = -2.25;
+            leftLeg.castShadow = true;
+            leftLegGroup.add(leftLeg);
 
             // Right Leg Group
             const rightLegGroup = new THREE.Group();
-            rightLegGroup.position.set(bodySize[0] / 2, 0, 0); // Horizontal position relative to body
-            
-            const rightLegMesh = new THREE.Mesh(legGeometry, legMaterial);
-            rightLegMesh.position.y = -2; // Position mesh relative to its group origin (pivot)
-            rightLegGroup.add(rightLegMesh);
+            rightLegGroup.position.set(1, 4, 0);
             mecha.add(rightLegGroup);
+            
+            const rightLeg = new THREE.Mesh(legGeo, lowerMat);
+            rightLeg.position.y = -2.25;
+            rightLeg.castShadow = true;
+            rightLegGroup.add(rightLeg);
 
-            // Store references for animation
+            // Store references
             mecha.leftLeg = leftLegGroup;
             mecha.rightLeg = rightLegGroup;
-
-            // Add Gun Model
-            const gunGeometry = new THREE.BoxGeometry(1, 1, 6);
-            const gunMaterial = new THREE.MeshPhongMaterial({ color: 0x555555, flatShading: true });
-            const gunMesh = new THREE.Mesh(gunGeometry, gunMaterial);
-            
-            // Position it on the front of the body, slightly up
-            const bodyDepth = bodySize[2];
-            gunMesh.position.set(0, bodySize[1] / 2 + 1, bodyDepth / 2 + 3); 
-            gunMesh.name = 'Gun';
-            mecha.add(gunMesh);
+            mecha.leftArm = leftArmGroup;
+            mecha.rightArm = rightArmGroup;
             
             // Add HP Label for enemies
             if (!isPlayer && hp > 0) {
                 const label = createHPLabel(hp);
-                label.position.y = bodySize[1] + 5; 
+                label.position.y = 13; 
                 mecha.add(label);
             }
 
@@ -838,6 +1172,11 @@
                 event.preventDefault(); 
                 isFiring = true;
             }
+            if (event.key.toLowerCase() === 'o') {
+                isScoped = !isScoped;
+                camera.fov = isScoped ? 30 : 75; // Zoom in (Scope)
+                camera.updateProjectionMatrix();
+            }
         }
 
         function onKeyUp(event) {
@@ -854,7 +1193,8 @@
 
         function onMouseMove(event) {
             if (document.pointerLockElement === renderer.domElement) {
-                mouseX += event.movementX * rotationSpeed;
+                const sensitivity = isScoped ? 0.2 : 1.0; // Lower sensitivity when aiming
+                mouseX += event.movementX * rotationSpeed * sensitivity;
                 
                 // Control mouseY for camera pitch (Up/Down mouse movement)
                 mouseY = Math.max(-maxMouseY, Math.min(maxMouseY, mouseY + event.movementY * 0.5)); 
@@ -878,7 +1218,22 @@
             if (keys['d']) velocity.sub(right.normalize().multiplyScalar(speed * 0.7));
             if (keys['a']) velocity.add(right.normalize().multiplyScalar(speed * 0.7));
 
-            player.position.add(velocity);
+            // Collision Detection with Obstacles
+            const nextPos = player.position.clone().add(velocity);
+            const playerBox = new THREE.Box3().setFromCenterAndSize(nextPos, new THREE.Vector3(4, 5, 4));
+            
+            let collided = false;
+            for (const obs of obstacles) {
+                const obsBox = new THREE.Box3().setFromObject(obs);
+                if (playerBox.intersectsBox(obsBox)) {
+                    collided = true;
+                    break;
+                }
+            }
+
+            if (!collided) {
+                player.position.add(velocity);
+            }
 
             // Adjust Y position to stay on terrain
             const currentX = player.position.x;
@@ -898,28 +1253,48 @@
         }
 
         function updateCamera() {
-            // 1. Calculate the desired pitch angle based on mouseY input
-            // normalizedMouseY: map mouseY from [-maxMouseY, maxMouseY] to [0, 1]
-            const normalizedMouseY = (mouseY + maxMouseY) / (2 * maxMouseY); 
-            // pitchDeg: map [0, 1] to [minPitchDeg, maxPitchDeg]
-            const pitchDeg = minPitchDeg + normalizedMouseY * (maxPitchDeg - minPitchDeg);
-            const pitchRad = THREE.MathUtils.degToRad(pitchDeg);
+            if (isScoped) {
+                // First Person / ADS View
+                // Position camera in front of the head/gun
+                // Shift right to align with gun, and forward enough to clear head
+                const offset = new THREE.Vector3(1.5, 9.5, 6); 
+                offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), player.rotation.y);
+                camera.position.copy(player.position).add(offset);
 
-            // 2. Calculate new Y and Z offsets based on pitch and fixed distance
-            // Y offset (up/down) = Distance * sin(pitch)
-            // Z offset (forward/backward) = Distance * cos(pitch)
-            const yOffset = baseCameraDistance * Math.sin(pitchRad); 
-            const zOffset = baseCameraDistance * Math.cos(pitchRad) * -1; // Must be negative (behind player)
+                // Look direction based on mouse pitch
+                // Map mouseY to a reasonable pitch range for FPS (e.g., +/- 45 degrees)
+                const pitch = (mouseY / maxMouseY) * (Math.PI / 4); 
+                
+                const lookDir = new THREE.Vector3(0, 0, 1);
+                lookDir.applyAxisAngle(new THREE.Vector3(1, 0, 0), pitch);
+                lookDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), player.rotation.y);
+                
+                const target = camera.position.clone().add(lookDir);
+                camera.lookAt(target);
+            } else {
+                // 1. Calculate the desired pitch angle based on mouseY input
+                // normalizedMouseY: map mouseY from [-maxMouseY, maxMouseY] to [0, 1]
+                const normalizedMouseY = (mouseY + maxMouseY) / (2 * maxMouseY); 
+                // pitchDeg: map [0, 1] to [minPitchDeg, maxPitchDeg]
+                const pitchDeg = minPitchDeg + normalizedMouseY * (maxPitchDeg - minPitchDeg);
+                const pitchRad = THREE.MathUtils.degToRad(pitchDeg);
 
-            const offset = new THREE.Vector3(0, yOffset, zOffset);
-                    
-            // 3. Apply player rotation (yaw) to the offset
-            offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), player.rotation.y);
+                // 2. Calculate new Y and Z offsets based on pitch and fixed distance
+                // Y offset (up/down) = Distance * sin(pitch)
+                // Z offset (forward/backward) = Distance * cos(pitch)
+                const yOffset = baseCameraDistance * Math.sin(pitchRad); 
+                const zOffset = baseCameraDistance * Math.cos(pitchRad) * -1; // Must be negative (behind player)
 
-            // 4. Update camera position and target
-            camera.position.copy(player.position).add(offset);
-            const lookAtPoint = player.position.clone(); 
-            camera.lookAt(lookAtPoint);
+                const offset = new THREE.Vector3(0, yOffset, zOffset);
+                        
+                // 3. Apply player rotation (yaw) to the offset
+                offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), player.rotation.y);
+
+                // 4. Update camera position and target
+                camera.position.copy(player.position).add(offset);
+                const lookAtPoint = player.position.clone(); 
+                camera.lookAt(lookAtPoint);
+            }
         }
 
         function updateHPLabel(enemy) {
@@ -948,9 +1323,10 @@
             if (currentTime < lastFireTime + weapon.fireRate) return;
 
             lastFireTime = currentTime;
+            playSound('shoot');
             
             // Find the gun mesh and calculate world position for fire origin
-            const gunMesh = player.children.find(c => c.name === 'Gun');
+            const gunMesh = player.getObjectByName('Gun');
             const fireOrigin = new THREE.Vector3();
             if (gunMesh) {
                 gunMesh.getWorldPosition(fireOrigin); 
@@ -963,8 +1339,9 @@
             raycaster.set(fireOrigin, forward); 
 
             // 4. Check for intersection with ONLY Enemies
-            const meshes = enemies.flatMap(group => group.children.filter(c => c.type !== 'Sprite'));
-            const intersects = raycaster.intersectObjects(meshes, true);
+            const enemyMeshes = enemies.flatMap(group => group.children.filter(c => c.type !== 'Sprite'));
+            const allTargets = [...obstacles, ...enemyMeshes]; // Include obstacles in raycast
+            const intersects = raycaster.intersectObjects(allTargets, true);
             const damage = weapon.damage + (playerLevel - 1) * 5; // Damage scales with level
             
             let targetDistance = 300; // Max visual range
@@ -973,6 +1350,12 @@
                 const hit = intersects[0];
                 targetDistance = hit.distance;
                 let hitObject = hit.object;
+
+                // Check if we hit an obstacle first
+                if (obstacles.includes(hitObject)) {
+                    // Hit a wall, stop here
+                    // Optional: Add spark effect on wall
+                } else {
                 
                 // Traverse up to find the enemy group
                 while (hitObject) {
@@ -983,12 +1366,23 @@
                 if (hitObject && enemies.includes(hitObject)) {
                     hitObject.health -= damage; 
                     updateHPLabel(hitObject);
+                    playSound('hit');
+
+                    // Player heals on hit (Lifesteal)
+                    const healOnHit = 2;
+                    playerHealth = Math.min(playerHealth + healOnHit, playerStats.health);
+                    const hullEl = document.getElementById('hull-integrity');
+                    hullEl.innerText = Math.floor(playerHealth);
+                    
+                    // Restore status color if healthy
+                    if (playerHealth > playerStats.health * 0.5) {
+                        hullEl.classList.remove('text-yellow-500', 'text-red-500');
+                        hullEl.classList.add('text-mech-green');
+                    }
                     
                     if (hitObject.health <= 0) {
                         // Enemy Destroyed - Reward XP
-                        // Lifesteal: Player heals based on enemy's max health
-                        playerHealth = Math.min(playerHealth + hitObject.maxHealth, playerStats.health);
-                        document.getElementById('hull-integrity').innerText = Math.floor(playerHealth);
+                        playSound('explosion');
                         
                         // Cleanup
                         scene.remove(hitObject);
@@ -1032,6 +1426,7 @@
                         });
                     }
                 }
+                }
             }
 
             // 5. Visual Laser Beam Feedback (starting from gun position)
@@ -1067,7 +1462,7 @@
             const projectile = new THREE.Mesh(projectileGeometry, projectileMaterial);
 
             // Fire from the enemy's gun, or fallback to center
-            const gunMesh = enemy.children.find(c => c.name === 'Gun');
+            const gunMesh = enemy.getObjectByName('Gun');
             const fireOrigin = new THREE.Vector3();
              if (gunMesh) {
                 gunMesh.getWorldPosition(fireOrigin); 
@@ -1081,6 +1476,7 @@
             projectile.velocity = direction.multiplyScalar(2.5); 
             projectile.owner = enemy; // Track who fired this for lifesteal
             
+            playSound('shoot'); // Enemy shoot sound (reused for now)
             scene.add(projectile);
             enemyProjectiles.push(projectile);
 
@@ -1102,6 +1498,7 @@
         function updateProjectiles() {
             const nextProjectiles = [];
             const playerBoundingSphere = new THREE.Sphere(player.position.clone(), 4); 
+            const obstacleBox = new THREE.Box3();
             const enemyDamage = enemyStats.weapon.damage;
 
             enemyProjectiles.forEach(p => {
@@ -1122,6 +1519,20 @@
                     return; 
                 }
 
+                // Check collision with obstacles
+                let hitObstacle = false;
+                for (const obs of obstacles) {
+                    obstacleBox.setFromObject(obs);
+                    if (obstacleBox.containsPoint(p.position)) {
+                        hitObstacle = true;
+                        scene.remove(p);
+                        p.geometry.dispose();
+                        p.material.dispose();
+                        break;
+                    }
+                }
+                if (hitObstacle) return;
+
                 if (p.position.distanceTo(player.position) > spawnRadius * 2) {
                     scene.remove(p);
                     p.geometry.dispose();
@@ -1137,6 +1548,7 @@
         function takeDamage(damage) {
             if (gameOver) return;
             
+            playSound('damage');
             playerHealth -= damage;
             playerHealth = Math.max(0, playerHealth);
 
@@ -1331,6 +1743,35 @@
                     const rotation = Math.sin(legAnimationTime) * maxLegRotation;
                     player.leftLeg.rotation.x = rotation;
                     player.rightLeg.rotation.x = -rotation;
+                    
+                    // Arm & Head Animation
+                    const head = player.getObjectByName('Head');
+                    if (player.leftArm && player.rightArm) {
+                        if (isFiring || isScoped) {
+                            // Aiming Pose (One hand, gun up, head tilted)
+                            const sway = isMoving ? rotation * 0.05 : 0; // Slight sway if moving
+
+                            // Right Arm: Up and slightly in
+                            player.rightArm.rotation.x = -Math.PI / 2 + sway;
+                            player.rightArm.rotation.y = -0.1; 
+                            player.rightArm.rotation.z = 0;
+
+                            // Left Arm: Separate, continues walking animation
+                            player.leftArm.rotation.set(-rotation, 0, 0);
+
+                            // Head: Tilt to aim
+                            if (head) {
+                                head.rotation.y = -0.3; // Turn right
+                                head.rotation.z = -0.15; // Tilt cheek to gun
+                            }
+                        } else {
+                            // Walking/Idle Pose (Arms down, swinging naturally)
+                            player.rightArm.rotation.set(rotation, 0, 0);
+                            player.leftArm.rotation.set(-rotation, 0, 0);
+
+                            if (head) head.rotation.set(0, 0, 0);
+                        }
+                    }
                 }
 
                 if (isFiring) {
@@ -1346,6 +1787,7 @@
             // Attach event listeners immediately
             document.getElementById('player-selectors').addEventListener('click', handleConfigSelection);
             document.getElementById('enemy-selectors').addEventListener('click', handleConfigSelection);
+            document.getElementById('arena-selector').addEventListener('click', handleArenaSelection);
             document.getElementById('start-game-button').addEventListener('click', startGame);
 
             // Show config screen first
